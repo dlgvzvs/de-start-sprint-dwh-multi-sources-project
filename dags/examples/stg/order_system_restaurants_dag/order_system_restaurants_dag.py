@@ -6,23 +6,25 @@ from airflow.models.variable import Variable
 from examples.stg.order_system_restaurants_dag.pg_saver import PgSaver
 from examples.stg.order_system_restaurants_dag.restaurant_loader import RestaurantLoader
 from examples.stg.order_system_restaurants_dag.restaurant_reader import RestaurantReader
+from examples.stg.order_system_restaurants_dag.user_loader import UserLoader      # <-- ДОБАВЛЕНО
+from examples.stg.order_system_restaurants_dag.user_reader import UserReader      # <-- ДОБАВЛЕНО
 from lib import ConnectionBuilder, MongoConnect
 
 log = logging.getLogger(__name__)
 
 
 @dag(
-    schedule_interval='0/15 * * * *',  # Задаем расписание выполнения дага - каждый 15 минут.
-    start_date=pendulum.datetime(2022, 5, 5, tz="UTC"),  # Дата начала выполнения дага. Можно поставить сегодня.
-    catchup=False,  # Нужно ли запускать даг за предыдущие периоды (с start_date до сегодня) - False (не нужно).
-    tags=['sprint5', 'example', 'stg', 'origin'],  # Теги, используются для фильтрации в интерфейсе Airflow.
-    is_paused_upon_creation=True  # Остановлен/запущен при появлении. Сразу запущен.
+    schedule_interval='0/15 * * * *',
+    start_date=pendulum.datetime(2022, 5, 5, tz="UTC"),
+    catchup=False,
+    tags=['sprint5', 'example', 'stg', 'origin'],
+    is_paused_upon_creation=True
 )
 def sprint5_example_stg_order_system_restaurants():
-    # Создаем подключение к базе dwh.
+    # Подключение к DWH
     dwh_pg_connect = ConnectionBuilder.pg_conn("PG_WAREHOUSE_CONNECTION")
 
-    # Получаем переменные из Airflow.
+    # Переменные MongoDB
     cert_path = Variable.get("MONGO_DB_CERTIFICATE_PATH")
     db_user = Variable.get("MONGO_DB_USER")
     db_pw = Variable.get("MONGO_DB_PASSWORD")
@@ -30,27 +32,33 @@ def sprint5_example_stg_order_system_restaurants():
     db = Variable.get("MONGO_DB_DATABASE_NAME")
     host = Variable.get("MONGO_DB_HOST")
 
+    # ===== ЗАДАЧА: РЕСТОРАНЫ (БЫЛО) =====
     @task()
     def load_restaurants():
-        # Инициализируем класс, в котором реализована логика сохранения.
         pg_saver = PgSaver()
-
-        # Инициализируем подключение у MongoDB.
         mongo_connect = MongoConnect(cert_path, db_user, db_pw, host, rs, db, db)
-
-        # Инициализируем класс, реализующий чтение данных из источника.
         collection_reader = RestaurantReader(mongo_connect)
-
-        # Инициализируем класс, в котором реализована бизнес-логика загрузки данных.
         loader = RestaurantLoader(collection_reader, dwh_pg_connect, pg_saver, log)
-
-        # Запускаем копирование данных.
         loader.run_copy()
 
-    restaurant_loader = load_restaurants()
+    # ===== ЗАДАЧА: ПОЛЬЗОВАТЕЛИ (ДОБАВЛЕНО) =====
+    @task()
+    def load_users():
+        pg_saver = PgSaver()
+        mongo_connect = MongoConnect(cert_path, db_user, db_pw, host, rs, db, db)
+        collection_reader = UserReader(mongo_connect)
+        loader = UserLoader(collection_reader, dwh_pg_connect, pg_saver, log)
+        loader.run_copy()
 
-    # Задаем порядок выполнения. Таск только один, поэтому зависимостей нет.
-    restaurant_loader  # type: ignore
+    # ===== ОБЪЯВЛЕНИЕ ЗАДАЧ =====
+    restaurant_loader = load_restaurants()  # БЫЛО
+    user_loader = load_users()              # ДОБАВЛЕНО
+
+    # ===== ПОРЯДОК ВЫПОЛНЕНИЯ =====
+    restaurant_loader  # type: ignore       # БЫЛО
+    user_loader  # type: ignore             # ДОБАВЛЕНО
+    restaurant_loader >> user_loader        # ДОБАВЛЕНО
 
 
+# ===== ВЫЗОВ DAG =====
 order_stg_dag = sprint5_example_stg_order_system_restaurants()  # noqa

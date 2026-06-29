@@ -1,5 +1,4 @@
 import os
- 
 import requests
 
 def submit(t_code, rlz_file=''):
@@ -11,17 +10,20 @@ def submit(t_code, rlz_file=''):
         with open(user_file, 'r') as u_file:
             user_code = u_file.read()
 
-    r = requests.post(
-        'http://localhost:3002',
-        json={
-            "code": user_code,
-            "test": t_code
-            })
-
-    print(r.json()['stderr'].replace('/app/__test.py',rlz_file))
-    print(r.json()['stdout'])
+    try:
+        r = requests.post(
+            'http://localhost:3002',
+            json={
+                "code": user_code,
+                "test": t_code
+            },
+        )
+        print(r.json()['stderr'].replace('/app/__test.py', rlz_file))
+        print(r.json()['stdout'])
+    except requests.exceptions.Timeout:
+        print("Ошибка: время ожидания истекло")
+    except Exception as e:
+        print(f"Ошибка: {e}")
 
 if __name__ == '__main__':
-    submit(
-        'de05040505'
-    )
+    submit('de05040505')
